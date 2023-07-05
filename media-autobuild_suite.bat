@@ -799,7 +799,7 @@ if %buildffmpeg%==6 set "ffmpeg=bothstatic"
 if %buildffmpeg% GTR 6 GOTO ffmpeg
 if %deleteINI%==1 echo.ffmpegB2=^%buildffmpeg%>>%ini%
 
-set defaultFFmpegPath=https://git.ffmpeg.org/ffmpeg.git
+set defaultFFmpegPath=https://github.com/gaivai/FFmpeg.git
 
 :ffmpegPath
 if [0]==[%ffmpegPathINI%] (
