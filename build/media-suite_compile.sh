@@ -214,8 +214,7 @@ fi
 _deps=("$MINGW_PREFIX"/lib/pkgconfig/oniguruma.pc)
 _check=(bin-global/jq.exe)
 if [[ $jq = y ]] &&
-    do_vcs "https://github.com/stedolan/jq.git"; then
-    do_patch "https://raw.githubusercontent.com/m-ab-s/mabs-patches/master/jq/0001-jv_thread-try-using-HAVE_PTHREAD_KEY_CREATE-instead.patch" am
+    do_vcs "https://github.com/jqlang/jq.git"; then
     do_pacman_install oniguruma
     do_uninstall "${_check[@]}"
     do_autoreconf
@@ -238,11 +237,9 @@ _check=(libxml2.a libxml2/libxml/xmlIO.h libxml-2.0.pc)
 if { enabled_any libxml2 libbluray || [[ $cyanrip = y ]] || ! mpv_disabled libbluray; } &&
     do_vcs "$SOURCE_REPO_LIBXML2"; then
     do_uninstall include/libxml2/libxml "${_check[@]}"
-    NOCONFIGURE=true do_autogen
-    [[ -f config.mak ]] && log "distclean" make distclean
-    sed -ri 's|(bin_PROGRAMS = ).*|\1|g' Makefile.am
-    CFLAGS+=" -DLIBXML_STATIC_FOR_DLL -DNOLIBTOOL" \
-        do_separate_confmakeinstall --without-python
+    extracommands=("-DLIBXML2_WITH_PYTHON=OFF" "-DLIBXML2_WITH_TESTS=OFF")
+    [[ $standalone = y ]] || extracommands+=("-DLIBXML2_WITH_PROGRAMS=OFF")
+    do_cmakeinstall "${extracommands[@]}"
     do_checkIfExist
 fi
 
@@ -1778,9 +1775,10 @@ fi
 _check=(librist.{a,pc} librist/librist.h)
 [[ $standalone = y ]] && _check+=(bin-global/rist{sender,receiver,2rist,srppasswd}.exe)
 if enabled librist && do_vcs "$SOURCE_REPO_LIBRIST"; then
-    do_patch "https://raw.githubusercontent.com/m-ab-s/mabs-patches/master/librist/0001-Workaround-fixes-for-cJSON-symbol-collision.patch" am
+    do_pacman_install cjson
+    do_patch "https://code.videolan.org/1480c1/librist/-/commit/0dc32581ceb0af14b71d4f548eacdd51b775c0ad.patch" am
     do_uninstall include/librist "${_check[@]}"
-    extracommands=("-Ddisable_json=true")
+    extracommands=("-Dbuiltin_cjson=false")
     [[ $standalone = y ]] || extracommands+=("-Dbuilt_tools=false")
     do_mesoninstall global -Dhave_mingw_pthreads=true -Dtest=false "${extracommands[@]}"
     do_checkIfExist
@@ -1937,6 +1935,7 @@ if { { [[ $ffmpeg != no ]] && enabled_any vulkan libplacebo; } ||
     do_uninstall "${_check[@]}"
     do_patch "$_mabs/vulkan-loader/0001-loader-cross-compile-static-linking-hacks.patch" am
     do_patch "$_mabs/vulkan-loader/0002-pc-remove-CMAKE_CXX_IMPLICIT_LINK_LIBRARIES.patch" am
+    do_patch "$_mabs/vulkan-loader/0003-loader-prefix-cjson-symbols-and-mark-most-as-static.patch" am
     grep_and_sed VULKAN_LIB_SUFFIX loader/vulkan.pc.in \
             's/@VULKAN_LIB_SUFFIX@//'
     create_build_dir
@@ -2129,8 +2128,6 @@ if [[ $ffmpeg != no ]]; then
             do_patch "https://raw.githubusercontent.com/OpenVisualCloud/SVT-VP9/master/ffmpeg_plugin/master-0001-Add-ability-for-ffmpeg-to-run-svt-vp9.patch" am ||
                 do_removeOption --enable-libsvtvp9
         fi
-
-        enabled libjxl && do_patch "https://raw.githubusercontent.com/m-ab-s/mabs-patches/master/ffmpeg/0001-libjxldec-remove-deprecated-fields.patch" am
 
         enabled libsvthevc || do_removeOption FFMPEG_OPTS_SHARED "--enable-libsvthevc"
         enabled libsvtav1 || do_removeOption FFMPEG_OPTS_SHARED "--enable-libsvtav1"
