@@ -123,15 +123,14 @@ grep -ElZR "${_keys}=[^/$].*" "$LOCALDESTDIR"/lib/pkgconfig | \
 unset _keys _root
 
 _clean_old_builds=(j{config,error,morecfg,peglib}.h
-    lib{jpeg,nettle,ogg,vorbis{,enc,file},gnurx,regex}.{,l}a
+    lib{jpeg,nettle,gnurx,regex}.{,l}a
     lib{opencore-amr{nb,wb},twolame,theora{,enc,dec},caca,magic,uchardet}.{l,}a
     libSDL{,main}.{l,}a libopen{jpwl,mj2,jp2}.{a,pc}
-    include/{nettle,ogg,opencore-amr{nb,wb},theora,cdio,SDL,openjpeg-2.{1,2},luajit-2.0,uchardet,wels}
+    include/{nettle,opencore-amr{nb,wb},theora,cdio,SDL,openjpeg-2.{1,2},luajit-2.0,uchardet,wels}
     regex.h magic.h
-    {nettle,ogg,vorbis{,enc,file},vo-aacenc,sdl,uchardet}.pc
+    {nettle,vo-aacenc,sdl,uchardet}.pc
     {opencore-amr{nb,wb},twolame,theora{,enc,dec},caca,dcadec,libEGL,openh264}.pc
     libcdio_{cdda,paranoia}.{{l,}a,pc}
-    share/aclocal/{ogg,vorbis}.m4
     twolame.h bin-audio/{twolame,cd-paranoia}.exe
     bin-global/{{file,uchardet}.exe,sdl-config,luajit-2.0.4.exe}
     libebur128.a ebur128.h
@@ -219,7 +218,7 @@ if [[ $jq = y ]] &&
     do_uninstall "${_check[@]}"
     do_autoreconf
     CFLAGS+=' -D_POSIX_C_SOURCE' YFLAGS='--warnings=no-yacc' \
-        do_separate_conf global --enable-{all-static,pthread-tls} --disable-docs
+        do_separate_conf global --enable-{all-static,pthread-tls,maintainer-mode} --disable-docs
     do_make && do_install jq.exe bin-global/
     do_checkIfExist
 fi
@@ -282,31 +281,16 @@ if [[ $mplayer = y || $mpv = y ]] ||
     fi
 
     _deps=(libfreetype.a)
-    _check=(libfontconfig.{,l}a fontconfig.pc)
+    _check=(libfontconfig.a fontconfig.pc)
     [[ $ffmpeg = sharedlibs ]] && enabled_any {lib,}fontconfig &&
         do_removeOption "--enable-(lib|)fontconfig"
     if enabled_any {lib,}fontconfig &&
         do_vcs "$SOURCE_REPO_FONTCONFIG"; then
         do_uninstall include/fontconfig "${_check[@]}"
-        sed -i 's| test$||' Makefile.am
-        sed -i 's|Libs.private:|& -lintl|' fontconfig.pc.in
-        for _s in printf fprintf snprintf vfprintf; do
-            grep -Rl "$_s" --include="*.[c]" | xargs sed -i "/__mingw_/! s/\b$_s/__mingw_&/g"
-        done
-        unset _s
-        do_autogen --noconf
-        do_autoreconf
-        extracommands=(--disable-docs --enable-iconv
-            "--with-libiconv-prefix=$MINGW_PREFIX"
-            "--with-libiconv-lib=$MINGW_PREFIX/lib" "--with-libiconv-includes=$MINGW_PREFIX/include"
-            "LDFLAGS=$LDFLAGS -L${LOCALDESTDIR}/lib -L${MINGW_PREFIX}/lib")
-        if enabled libxml2; then
-            sed -i 's|Cflags:|& -DLIBXML_STATIC|' fontconfig.pc.in
-            extracommands+=(--enable-libxml2)
-        fi
-        CFLAGS+=" $(enabled libxml2 && echo -DLIBXML_STATIC)" \
-            do_separate_confmakeinstall global "${extracommands[@]}"
-        [[ $standalone = y ]] || rm -f "$LOCALDESTDIR"/bin-global/fc-*.exe
+        do_pacman_install gperf
+        extracommands=()
+        [[ $standalone = y ]] || extracommands+=(-Dtools=disabled)
+        do_mesoninstall global -Ddoc=disabled -Dtests=disabled "${extracommands[@]}"
         do_checkIfExist
     fi
 
@@ -696,24 +680,40 @@ fi
 
 grep_or_sed stdc++ "$(file_installed libilbc.pc)" "/Libs:/ a\Libs.private: -lstdc++"
 
-enabled libvorbis && do_pacman_install libvorbis
-enabled libspeex && do_pacman_install speex
+_check=(libogg.{l,}a ogg/ogg.h ogg.pc)
+if {
+    [[ $flac = y ]] ||
+    { [[ $standalone = y ]] && enabled libvorbis; }
+    } && do_vcs "$SOURCE_REPO_LIBOGG"; then
+    do_uninstall include/ogg "${_check[@]}"
+    do_autogen
+    do_separate_confmakeinstall audio
+    do_checkIfExist
+fi
 
-_check=(bin-audio/speex{enc,dec}.exe)
-if [[ $standalone = y ]] && enabled libspeex &&
-    do_vcs "$SOURCE_REPO_SPEEX"; then
-    do_uninstall include/speex libspeex.{l,}a speex.pc "${_check[@]}"
-    do_autoreconf
-    do_separate_conf --enable-vorbis-psy --enable-binaries
-    do_make
-    do_install src/speex{enc,dec}.exe bin-audio/
+_check=(libvorbis{,enc,file}.{,l}a vorbis{,enc,file}.pc vorbis/vorbisenc.h)
+if enabled libvorbis && do_vcs "$SOURCE_REPO_LIBVORBIS"; then
+    do_uninstall include/vorbis "${_check[@]}"
+    do_autogen
+    do_separate_confmakeinstall audio --disable-docs
+    do_checkIfExist
+fi
+
+_check=(libspeex.{l,}a speex.pc speex/speex.h)
+[[ $standalone = y ]] && _check+=(bin-audio/speex{enc,dec}.exe)
+if enabled libspeex && do_vcs "$SOURCE_REPO_SPEEX"; then
+    do_pacman_remove speex
+    do_uninstall include/speex "${_check[@]}"
+    do_autogen
+    extracommands=()
+    [[ $standalone = y ]] || extracommands+=(--disable-binaries)
+    do_separate_confmakeinstall audio --enable-vorbis-psy "${extracommands[@]}"
     do_checkIfExist
 fi
 
 _check=(libFLAC{,++}.{,l}a flac{,++}.pc)
 [[ $standalone = y ]] && _check+=(bin-audio/flac.exe)
 if [[ $flac = y ]] && do_vcs "$SOURCE_REPO_FLAC"; then
-    do_pacman_install libogg
     do_autogen
     if [[ $standalone = y ]]; then
         _check+=(bin-audio/metaflac.exe)
@@ -781,12 +781,11 @@ if [[ $exhale = y ]] &&
     unset _notrequired
 fi
 
-_check=(bin-audio/oggenc.exe)
-_deps=("$MINGW_PREFIX"/lib/libvorbis.a)
+_check=(bin-audio/ogg{enc,dec}.exe)
+_deps=(ogg.pc vorbis.pc)
 if [[ $standalone = y ]] && enabled libvorbis &&
-    do_vcs "$SOURCE_REPO_LIBVORBIS"; then
+    do_vcs "$SOURCE_REPO_VORBIS_TOOLS"; then
     do_patch "https://github.com/xiph/vorbis-tools/pull/39.patch" am
-    _check+=(bin-audio/oggdec.exe)
     do_autoreconf
     do_uninstall "${_check[@]}"
     extracommands=()
@@ -808,10 +807,10 @@ if enabled libopus && do_vcs "$SOURCE_REPO_OPUS"; then
 fi
 
 if [[ $standalone = y ]] && enabled libopus; then
-    do_pacman_install openssl libogg
+    do_pacman_install openssl
     hide_libressl
     _check=(opus/opusfile.h libopus{file,url}.{,l}a opus{file,url}.pc)
-    _deps=(opus.pc "$MINGW_PREFIX"/lib/pkgconfig/{libssl,ogg}.pc)
+    _deps=(ogg.pc opus.pc "$MINGW_PREFIX"/lib/pkgconfig/libssl.pc)
     if do_vcs "$SOURCE_REPO_OPUSFILE"; then
         do_uninstall "${_check[@]}"
         do_patch "https://raw.githubusercontent.com/m-ab-s/mabs-patches/master/opusfile/0001-Disable-cert-store-integration-if-OPENSSL_VERSION_NU.patch" am
